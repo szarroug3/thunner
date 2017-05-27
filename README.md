@@ -23,7 +23,7 @@ Chmod `thunner` and add to your path. Make sure you have a `~/.thunnerrc` file; 
 Keys
 ----
 
-* Arrow keys : menu navigation
+* Arrow keys or hjkl: menu navigation
 * enter : play (plays whatever is under the cursor, be that a song/album/artist or higher level menu item, but also queues the rest of the items in the current menu playing down the list and looping round to the top)
 * ] : play (plays only the item under the cursor, be that a song/album/artist or higher level menu item.
 * . : next

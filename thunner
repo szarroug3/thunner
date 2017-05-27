@@ -36,7 +36,7 @@ import signal
 
 from Queue import Queue, Empty
 from threading import Thread
-from gmusicapi import Webclient
+from gmusicapi import Mobileclient
 from getpass import getpass
 from operator import itemgetter
 
@@ -67,10 +67,10 @@ def parse_config():
                 elif words[0] == 'assign':
                     config['assignments'][words[2]] = words[1]
             if 'pass' not in config:
-		    # If Password not in Config, ask for it
-		    config['pass'] = getpass()
+                # If Password not in Config, ask for it
+                config['pass'] = getpass()
     except IOError:
-        print "Can't find ~/.thunnerrc"
+        print("Can't find ~/.thunnerrc")
         sys.exit()
     return config
 
@@ -105,8 +105,8 @@ def name_colors(colordefs):
     return colormap
 
 def apiinit(email,password):
-    api = Webclient()
-    api.login(email, password)
+    api = Mobileclient()
+    api.login(email, password, Mobileclient.FROM_MAC_ADDRESS)
     return api
 
 def scrinit():
@@ -230,20 +230,37 @@ def gen_trees(library):
             if album == "":
                 album_name = "Untitled Album"
             albums_of_artist.append({ "name":album_name,
-                                      "subtree":sorted(tracks,key=itemgetter('track')),
+                                      "subtree":sorted(tracks,key=itemgetter("track")),
                                       "subtreeline":0 })
         albums = albums + albums_of_artist
         artists.append({ "name":artist,
                          "subtree":sorted(albums_of_artist,key=lambda x: x['name'].lower()),
                          "subtreeline":0 })
-    return sorted(artists, key=lambda x: x['name'].lower()), sorted(albums, key=lambda x: x['name'].lower())
+    return sorted(artists, key=lambda x: x["name"].lower()), sorted(albums, key=lambda x: x["name"].lower())
 
-def list_playlists(api,playlist_ids):
+def list_songs(library):
+    songs = []
+    for song in library:
+        if "storeId" in song.keys():
+            songs.append({"id": song["storeId"],
+                          "track": song["trackNumber"],
+                          "name": song["title"].encode("ascii", "ignore"),
+                          "artist": song["artist"].encode("ascii", "ignore"),
+                          "album": song["album"].encode("ascii", "ignore")})
+    return sorted(songs, key=lambda x: x["name"])
+
+def list_playlists(playlist_contents):
     playlists = []
-    for name,pids in playlist_ids['user'].iteritems():
-        for pid in pids:
-            playlists.append( { "name":name, "subtree":api.get_playlist_songs(pid), "subtreeline":0 } )
-    return playlists
+    for playlist in playlist_contents:
+        if "tracks" in playlist.keys():
+            songs = [{"id": track["track"]["storeId"],
+                      "track": track["track"]["trackNumber"],
+                      "name": track["track"]["title"].encode("ascii", "ignore"),
+                      "artist": track["track"]["artist"].encode("ascii", "ignore"),
+                      "album": track["track"]["album"].encode("ascii", "ignore")}
+                     for track in playlist["tracks"] if track["source"] == "2"]
+            playlists.append( { "name":playlist["name"], "subtree":songs, "subtreeline":0 } )
+    return sorted(playlists, key=lambda x: x["name"])
 
 def headphones(scr,height,code):
     try:
@@ -262,7 +279,7 @@ def switch_menu(menu):
     return menu, new_list, new_item, new_n
 
 def main():
-
+    song_info_file = os.path.join(os.path.expanduser('~'), '.thunner.info')
     config = parse_config()
 
     # Because I'd like to see some umlauts (rather than garbage):
@@ -276,6 +293,7 @@ def main():
 
     api = None
     playing = None
+    song_changed = False
     try:
         height, width = scr.getmaxyx()
 
@@ -286,14 +304,14 @@ def main():
         api = apiinit(config['email'],config['pass'])
 
         if not api.is_authenticated():
-            print "Credentials were not accepted. Exiting..."
+            print("Credentials were not accepted. Exiting...")
             return
 
-        library = api.get_all_songs()
+        library = list_songs(api.get_all_songs())
         artists, albums = gen_trees(library)
 
-        playlist_ids = api.get_all_playlist_ids()
-        playlists = list_playlists(api,playlist_ids)
+        playlist_contents = api.get_all_user_playlist_contents()
+        playlists = list_playlists(playlist_contents)
 
         scr.clear()
         toplevel = { "name":"Toplevel",
@@ -340,6 +358,7 @@ def main():
                     song = queue[q_n]
                     playing = play(api.get_stream_url(song['id']))
                     current_song = song
+                    song_changed = True
             elif c == ord('q'):
                 if isinstance(playing, subprocess.Popen):
                     playing.terminate()
@@ -374,6 +393,7 @@ def main():
                         current_song = song
                         status = 'Playing:'
                         playing = play(api.get_stream_url(song['id']))
+                        song_changed = True
             elif c == ord('.'):
                 if isinstance(playing, subprocess.Popen):
                     playing.terminate()
@@ -382,6 +402,7 @@ def main():
                     playing = play(api.get_stream_url(song['id']))
                     current_song = song
                     status = 'Playing:'
+                    song_changed = True
             elif c == ord(','):
                 if isinstance(playing, subprocess.Popen):
                     playing.terminate()
@@ -390,20 +411,25 @@ def main():
                     playing = play(api.get_stream_url(song['id']))
                     current_song = song
                     status = 'Playing:'
-            elif c == curses.KEY_LEFT:
+                    song_changed = True
+            elif c == curses.KEY_LEFT or c == ord('h'):
                 if previous:
                     c_menu, c_list, c_item, c_n = switch_menu(previous.pop())
-            elif c == curses.KEY_RIGHT:
+            elif c == curses.KEY_RIGHT or c == ord('l'):
                 if c_list and "subtree" in c_list[c_item]:
                     previous.append(c_menu)
                     c_menu, c_list, c_item, c_n = switch_menu(c_list[c_item])
-            elif c == curses.KEY_DOWN:
+            elif c == curses.KEY_DOWN or c == ord('j'):
                 if c_item < c_n-1:
                     c_item += 1
+                elif c_item == c_n-1:
+                    c_item = 0
                 c_menu["subtreeline"] = c_item
-            elif c == curses.KEY_UP:
+            elif c == curses.KEY_UP or c == ord('k'):
                 if c_item > 0:
                     c_item -= 1
+                elif c_item == 0:
+                    c_item = c_n-1
                 c_menu["subtreeline"] = c_item
             elif c == ord(' '):
                 if status == 'Playing:':
@@ -414,6 +440,7 @@ def main():
                 thread = Thread(target=pause, args=(playing,q))
                 thread.daemon = True
                 thread.start()
+                song_changed = True
             elif c == curses.KEY_RESIZE:
                 height, width = scr.getmaxyx()
                 viewheight = height-header_height-footer_height
@@ -422,15 +449,24 @@ def main():
             header(scr,width,previous,c_menu,code,colors,colormap)
             if current_song == None:
                 footer(scr,height,width,[(status,'status')],code,colors,colormap)
+                if os.path.exists(song_info_file):
+                    os.remove(song_info_file)
             else:
                 footer(scr,height,width,[(status,'status'),
                                          (' ','text'),
                                          (current_song['artist'],'current-artist'),
                                          (' - ','footer-sep'),
                                          (current_song['name'],'current-song')],code,colors,colormap)
+                if song_changed:
+                    with open(song_info_file, 'w+') as f:
+                        status_symbol = '\\uf04b' if status == 'Playing:' else '\\uf04c'
+                        f.write('{0}\n{1} - {2}'.format(status_symbol, current_song['artist'], current_song['name']))
+                        song_changed = False
             drawlist(scr,viewheight,width,header_height,c_list,c_item,code,colors,colormap)
             scr.refresh()
     finally:
+        if os.path.exists(song_info_file):
+            os.remove(song_info_file)
         if isinstance(playing, subprocess.Popen):
             playing.terminate()
         scrrelease(scr)
