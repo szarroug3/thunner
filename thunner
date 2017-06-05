@@ -280,6 +280,8 @@ def switch_menu(menu):
 
 def main():
     song_info_file = os.path.join(os.path.expanduser('~'), '.thunner.info')
+    if os.path.exists(song_info_file):
+        os.remove(song_info_file)
     config = parse_config()
 
     # Because I'd like to see some umlauts (rather than garbage):
