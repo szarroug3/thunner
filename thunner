@@ -463,6 +463,8 @@ def main():
                     with open(song_info_file, 'w+') as f:
                         status_symbol = '\\uf04b' if status == 'Playing:' else '\\uf04c'
                         f.write('{0}\n{1} - {2}'.format(status_symbol, current_song['artist'], current_song['name']))
+                        # notify OS that song changed
+                        subprocess.Popen(['notify-send', current_song['name'], '\nby {0}'.format(current_song['artist'])])
                         song_changed = False
             drawlist(scr,viewheight,width,header_height,c_list,c_item,code,colors,colormap)
             scr.refresh()
